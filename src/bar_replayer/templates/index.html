@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bar Replayer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.css') }}">
+    <script
+      src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"
+      defer
+    ></script>
+    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}" defer></script>
+    <script>
+      window.barReplayerDefaults = {{ defaults | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div id="status" class="status" role="status">Loading parquet catalog…</div>
+      </header>
+
+      <section class="panel control-panel" aria-label="Replay setup and controls">
+        <label>
+          <span>Mode</span>
+          <select id="modeSelect">
+            <option value="single">Single</option>
+            <option value="dual">Dual</option>
+            <option value="tri">Tri mode:Observe</option>
+          </select>
+        </label>
+        <label>
+          <span>Symbol</span>
+          <select id="symbolSelect" disabled></select>
+        </label>
+        <label id="timeframeField">
+          <span>Timeframe</span>
+          <select id="timeframeSelect" disabled></select>
+          <span id="dualPairLabel" class="fixed-pair hidden">1H / 5m</span>
+        </label>
+        <label class="start-field">
+          <span>Start (UTC)</span>
+          <input
+            id="startTime"
+            type="text"
+            value="{{ defaults.start_time_picker }}"
+            placeholder="YYYY-MM-DDTHH:mm"
+            autocomplete="off"
+          >
+        </label>
+        <button
+          id="loadButton"
+          class="button primary load-button icon-only-button"
+          type="button"
+          data-tooltip="Fetch replay data"
+          aria-label="Fetch replay data"
+          disabled
+        >
+          <img class="button-icon" src="{{ url_for('static', filename='icons/fetch.svg') }}" alt="" aria-hidden="true">
+        </button>
+
+        <div class="control-divider" aria-hidden="true"></div>
+        <div class="transport-controls" aria-label="Replay transport">
+          <button
+            id="backButton"
+            class="button icon-only-button"
+            type="button"
+            data-tooltip="Rewind one bar"
+            aria-label="Rewind one bar"
+            disabled
+          >
+            <img class="button-icon" src="{{ url_for('static', filename='icons/rewind.svg') }}" alt="" aria-hidden="true">
+          </button>
+          <button id="stepButton" class="button icon-only-button" type="button" data-tooltip="Step forward one bar" aria-label="Step forward one bar" disabled>
+            <img class="button-icon" src="{{ url_for('static', filename='icons/step.svg') }}" alt="" aria-hidden="true">
+          </button>
+          <button id="playButton" class="button primary icon-only-button" type="button" data-tooltip="Play replay" aria-label="Play replay" disabled>
+            <img class="button-icon" src="{{ url_for('static', filename='icons/playpause.svg') }}" alt="" aria-hidden="true">
+          </button>
+          <button id="resetButton" class="button icon-only-button reset-button" type="button" data-tooltip="Replay from the start" aria-label="Replay from the start" disabled>
+            <img class="button-icon" src="{{ url_for('static', filename='icons/replay.svg') }}" alt="" aria-hidden="true">
+          </button>
+        </div>
+        <div id="clockToggle" class="clock-toggle hidden" role="group" aria-label="Replay clock">
+          <button class="clock-button" type="button" data-clock="1h">1H</button>
+          <button class="clock-button" type="button" data-clock="5m">5m</button>
+        </div>
+        <label class="speed-control">
+          <span>Speed</span>
+          <select id="speedSelect">
+            <option value="1000">1×</option>
+            <option value="500" selected>2×</option>
+            <option value="250">4×</option>
+            <option value="125">8×</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="panel chart-panel" aria-label="OHLC chart">
+        <div class="chart-heading">
+          <div>
+            <div class="chart-title-line">
+              <h1 id="chartTitle">Waiting for data</h1>
+              <span class="chart-title-help">
+                <button class="chart-help-trigger" type="button" aria-label="Chart help" aria-describedby="chartHelpTooltip">
+                  <img class="chart-help-icon" src="{{ url_for('static', filename='icons/tooltip.svg') }}" alt="" aria-hidden="true">
+                </button>
+                <span id="chartHelpTooltip" class="chart-title-tooltip" role="tooltip">Each pane has its own zoom · click a closed bar to rewind the shared cursor.</span>
+              </span>
+            </div>
+            <p id="chartHint">Load a symbol and timeframe to begin.</p>
+          </div>
+          <div class="chart-heading-right">
+            <div id="cursorStatus" class="cursor-status">No replay loaded</div>
+            <button id="rewindButton" class="button rewind-button hidden" type="button"></button>
+            <div id="ohlcReadout" class="ohlc-readout" aria-live="polite"></div>
+          </div>
+        </div>
+        <div id="singleChartPanel">
+          <div class="chart-wrap">
+          <div id="chart" aria-label="Candlestick chart. Pan and zoom; hover to inspect OHLC values."></div>
+          <div id="chartTooltip" class="chart-tooltip" aria-hidden="true"></div>
+          <div id="emptyChart" class="empty-chart">Bars through the cursor will appear here.</div>
+          </div>
+          <p class="chart-help">Drag to pan across candles or blank chart space · wheel to zoom · hover for OHLC. Only bars through the cursor are shown.</p>
+        </div>
+        <div id="dualChartStack" class="chart-stack is-dual hidden">
+          <section id="higherPane" class="chart-pane" aria-label="1H higher timeframe chart">
+            <div class="chart-wrap pane-chart-wrap">
+              <div class="chart-annotation" aria-label="1H MTF"><strong>1H</strong><span>(MTF)</span></div>
+              <span id="higherPaneHint" class="pane-hint pane-chart-hint"></span>
+              <div id="higherLayerToggles" class="layer-toggle-row chart-legend" role="group" aria-label="1H chart legends">
+                <label><input id="higherStructureToggle" type="checkbox" checked><span class="legend-mark legend-mark--str" aria-hidden="true"></span><span>Structure</span></label>
+                <label><input id="higherOrderflowToggle" type="checkbox" checked><span class="legend-mark legend-mark--flow" aria-hidden="true"></span><span>Orderflow</span></label>
+                <label><input id="higherItrToggle" type="checkbox"><span class="legend-mark legend-mark--itr" aria-hidden="true"></span><span>ITR</span></label>
+                <span class="legend-series-key" role="img" aria-label="R: provisional reaffirm level" title="R: provisional reaffirm level"><span class="legend-mark legend-mark--orderflow-r" aria-hidden="true"></span><span>R</span></span>
+                <span class="legend-series-key" role="img" aria-label="P: previous defended level" title="P: previous defended level"><span class="legend-mark legend-mark--orderflow-p" aria-hidden="true"></span><span>P</span></span>
+                <label><input id="higherDefenseToggle" type="checkbox" checked><span class="legend-mark legend-mark--defense" aria-hidden="true"></span><span>STR defense</span></label>
+                <label><input id="higherTaToggle" type="checkbox" checked><span class="legend-mark legend-mark--ema" aria-hidden="true"></span><span>EMA</span></label>
+                <label><input id="higherBandToggle" type="checkbox"><span class="legend-mark legend-mark--band" aria-hidden="true"></span><span>ATR band</span></label>
+                <label id="dailyToggleLabel" class="hidden"><input id="dailyToggle" type="checkbox" checked><span class="legend-mark legend-mark--daily" aria-hidden="true"></span><span>1D</span></label>
+              </div>
+              <div id="higherChart" aria-label="1H candlestick chart"></div>
+              <div id="higherFlowShade" class="flow-shading" aria-hidden="true"></div>
+              <div id="higherTooltip" class="chart-tooltip pane-chart-tooltip" aria-hidden="true"></div>
+              <div id="higherEmpty" class="empty-chart">Bars through the cursor will appear here.</div>
+            </div>
+          </section>
+          <div id="dailyStrip" class="daily-strip hidden" aria-label="1D as-of orderflow context">
+            <div id="dailyStripCells" class="daily-strip-cells" aria-hidden="true"></div>
+            <span id="dailyStripLabel" class="daily-strip-label"></span>
+          </div>
+          <section id="lowerPane" class="chart-pane" aria-label="5m lower timeframe chart">
+            <div class="chart-wrap pane-chart-wrap">
+              <div class="chart-annotation" aria-label="5m LTF"><strong>5m</strong><span>(LTF)</span></div>
+              <span id="lowerPaneHint" class="pane-hint pane-chart-hint"></span>
+              <div id="lowerLayerToggles" class="layer-toggle-row chart-legend" role="group" aria-label="5m chart legends">
+                <label><input id="lowerStructureToggle" type="checkbox" checked><span class="legend-mark legend-mark--ltf-structure" aria-hidden="true"></span><span>Structure</span></label>
+                <label><input id="lowerOrderflowToggle" type="checkbox" checked><span class="legend-mark legend-mark--flow" aria-hidden="true"></span><span>Orderflow</span></label>
+                <label><input id="lowerFlowShadeToggle" type="checkbox"><span class="legend-mark legend-mark--flow-shade" aria-hidden="true"></span><span>Shade</span></label>
+                <span class="legend-series-key" role="img" aria-label="R: provisional reaffirm level" title="R: provisional reaffirm level"><span class="legend-mark legend-mark--orderflow-r" aria-hidden="true"></span><span>R</span></span>
+                <span class="legend-series-key" role="img" aria-label="P: previous defended level" title="P: previous defended level"><span class="legend-mark legend-mark--orderflow-p" aria-hidden="true"></span><span>P</span></span>
+              </div>
+              <div id="lowerChart" aria-label="5m candlestick chart"></div>
+              <div id="lowerFlowShade" class="flow-shading" aria-hidden="true"></div>
+              <div id="lowerTooltip" class="chart-tooltip pane-chart-tooltip" aria-hidden="true"></div>
+              <div id="lowerEmpty" class="empty-chart">Bars through the cursor will appear here.</div>
+            </div>
+          </section>
+        </div>
+        <details id="fusionInspector" class="fusion-inspector hidden">
+          <summary>Layer 3 → 4 Fusion · latest 5m close</summary>
+          <pre id="fusionContextData">No Fusion context available.</pre>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>

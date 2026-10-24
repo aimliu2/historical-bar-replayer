@@ -1,0 +1,24 @@
+data:
+  root: data                 # relative to the repository root
+replay:
+  mode: single               # single | dual | tri
+  symbol: EURUSD             # default symbol; anchors / 1D strip need an entry under symbols:
+  start_time: "2026-01-01"
+  single:                    # Single mode only
+    timeframe: 1d
+    window_bars: 200
+  lanes:                     # Dual and Tri (Tri = Dual + 1D strip); pair fixed to 1H / 5m
+    enabled: true            # false = bars only, no lane facts
+    str_bars_1d: 1           # daily STR survival; omitted = 2 (V1.0 baseline)
+    clock: 1h                # clock that steps first: 1h | 5m
+    window_bars: {1h: 500, 5m: 1000}
+symbols:                     # per-symbol runtime metadata
+  EURUSD:
+    code: "001"
+    pip_size: 0.0001
+    sl_floor_pips: 13
+    sl_cap_pips: 25
+    # anchor_set / anchor_set_1d omitted: no export/EURUSD/anchor/ data in this repo
+layer4:
+  SMC-3TF:
+    retry_policy: {"1": 5x9, "2a": 5x9, "2b": 5x9, "3": 3S}

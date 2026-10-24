@@ -1,3 +1,14 @@
+# Agent Files
+.DS_store
+AGENTS.md
+CLAUDE.md
+respond_format.md
+user_MEMORY.md
+MEMORY.md
+
+# Large data folder
+data
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
