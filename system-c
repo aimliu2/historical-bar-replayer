@@ -1,0 +1,70 @@
+The active implementation is in **`runtime/`**, with pair-specific rules configured in **`config/`**. The HTML architecture map describes how those modules connect; it does not contain the trading implementation.
+
+**Where the trading logic lives**
+
+| Responsibility | Code | What it does |
+|---|---|---|
+| **Entry signals and SL/TP** | [strategy.py](../py-systemC-bot/runtime/engine/strategy.py) | Implements A1 touch entries, A2 retracement entries, B structural breaks, session filters, and stop/target calculations. |
+| **Market structure and strategy memory** | [engine.py](../py-systemC-bot/runtime/engine/engine.py) | `InstrumentEngine` tracks pivots, SuperTrend flips, ChoCh, new extremes, cooldowns, and per-hypothesis state across bars. |
+| **Signal selection** | [policy.py](../py-systemC-bot/runtime/engine/policy.py) | `policy_3()` filters signals by regime and pullback rules, then applies priority: **B → A2 → A1**. |
+| **Indicators and features** | [features.py](../py-systemC-bot/runtime/engine/features.py), [indicator.py](../py-systemC-bot/runtime/engine/indicator.py), [numba_kernels.py](../py-systemC-bot/runtime/engine/numba_kernels.py) | Calculates SuperTrend, EMA, RSI, ATR, regime labels, and derived features. |
+| **Timeframe alignment** | [align.py](../py-systemC-bot/runtime/engine/align.py) | Joins entry and context timeframes using available closed bars. |
+| **Portfolio admission** | [portfolio.py](../py-systemC-bot/runtime/portfolio.py) | Rejects duplicates, checks the Rule 2 blocking flag, and enforces portfolio and symbol position limits. |
+| **Position sizing and orders** | [execution.py](../py-systemC-bot/runtime/execution.py) | Handles paper/live entries, calculates lots from equity and SL distance, validates stops, and sends orders. |
+
+The three strategy families are:
+
+- **A1:** Price touches EMA20 or SuperTrend, with trajectory and context checks.
+- **A2:** Price makes a new extreme, then retraces into a configured discount zone.
+- **B:** A confirmed ChoCh is followed by a close beyond the swing extreme.
+
+Their main evaluation function is [`evaluate_hypotheses()`](../py-systemC-bot/runtime/engine/strategy.py).
+
+**How everything runs**
+
+```text
+run_orders_vps.py              run_orders_rpyc.py
+(native MT5)                  (remote MT5 connection)
+          └──────────┬──────────┘
+                 runner.py
+                     │
+         reconcile broker positions
+                     │
+         update closed-bar data cache
+                     │
+             engine_bridge.py
+                     │
+          features → InstrumentEngine
+                     │
+          strategy → policy_3 → SL/TP
+                     │
+         portfolio.py accepts/rejects
+                     │
+          execution.py opens trades
+                     │
+        save state, logs, reports, alerts
+```
+
+[`runner.py`](../py-systemC-bot/runtime/runner.py) coordinates the loop. [`engine_bridge.py`](../py-systemC-bot/runtime/engine_bridge.py) connects cached market data and saved strategy state to the engine.
+
+Supporting modules handle:
+
+| Area | Files |
+|---|---|
+| MT5 connectivity and market data | `adapters.py`, `data_cache.py`, `broker_time.py` |
+| Broker closes and position reconciliation | `reconciliation.py` |
+| Persistent state | `state_store.py`, root `state_*_portfolio_v2.json` files |
+| Logs, performance health, Telegram | `logging.py`, `gps.py`, `notifications.py` |
+| Operator status and controls | Root `status.py` |
+
+**Where to change behavior**
+
+- **Change signal conditions:** `runtime/engine/strategy.py`.
+- **Change signal priority or regime filtering:** `runtime/engine/policy.py`.
+- **Tune a specific currency pair:** [config/](../py-systemC-bot/config)—`AUDUSD.yaml`, `EURJPY.yaml`, `EURUSD.yaml`, `USDJPY.yaml`. These select hypotheses, timeframes/phases, sessions, stop distances, and reward ratios.
+- **Change portfolio risk and deployment settings:** [config/config.yaml](../py-systemC-bot/config/config.yaml).
+- **Change sizing or order mechanics:** `runtime/execution.py`.
+
+[`docs/logics/`](../py-systemC-bot/docs/logics) contains conceptual and research notes; some discuss other systems or proposed approaches. [`lecagy/`](../py-systemC-bot/lecagy) contains retired V1 code.
+
+For understanding the actual strategy, read **`strategy.py` → `engine.py` → `policy.py` → one symbol YAML → `engine_bridge.py`**.
